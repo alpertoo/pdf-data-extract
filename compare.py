@@ -6,9 +6,9 @@ import pandas as pd
 import pdfplumber
 
 
-# =========================================
-# Helper: extract text from a single PDF
-# =========================================
+# ==============================
+# PDF text extraction
+# ==============================
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """
@@ -23,9 +23,9 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
     return text
 
 
-# =========================================
-# Parser: FedEx
-# =========================================
+# ==============================
+# FedEx parser
+# ==============================
 
 def parse_fedex(text: str) -> pd.DataFrame:
     """
@@ -37,22 +37,21 @@ def parse_fedex(text: str) -> pd.DataFrame:
         Example:
             <shipment_number> <date_dd/mm/yyyy> FedEx Priority ... <values>
       - Extract:
-          * shipment_number
-          * shipment_date (string)
-          * charge (last decimal number on the line)
+          shipment_number
+          shipment_date (string)
+          charge (last decimal number on the line)
 
     Regex pattern:
-      - ^(\\d{9,})  matches a long shipment number at the start of the line.
-      - (\\d{2}/\\d{2}/\\d{4})  captures dates like 13/10/2025.
-      - \\d+\\.\\d+  finds decimal values such as 2.99 or 17.10.
+      - ^(\\d{9,}) matches a long shipment number at the start of the line.
+      - (\\d{2}/\\d{2}/\\d{4}) captures dates like 13/10/2025.
+      - \\d+\\.\\d+ finds decimal values such as 2.99 or 17.10.
         The last decimal on the line is treated as the total charge.
     """
 
     rows = []
+    pattern = r"^(\d{9,})\s+(\d{2}/\d{2}/\d{4})"
 
     for line in text.splitlines():
-        # Match a shipment line: starts with shipment_number and date
-        pattern = r"^(\d{9,})\s+(\d{2}/\d{2}/\d{4})"
         m = re.match(pattern, line)
         if not m:
             continue
@@ -60,12 +59,10 @@ def parse_fedex(text: str) -> pd.DataFrame:
         shipment_number = m.group(1)
         shipment_date = m.group(2)
 
-        # Extract all decimal numbers on the line
         nums = re.findall(r"\d+\.\d+", line)
         if not nums:
             continue
 
-        # Last decimal number is the total charge for that shipment
         charge = float(nums[-1])
 
         rows.append(
@@ -87,9 +84,9 @@ def parse_fedex(text: str) -> pd.DataFrame:
     return df
 
 
-# =========================================
-# Parser: Evri
-# =========================================
+# ==============================
+# Evri parser
+# ==============================
 
 def parse_evri(text: str) -> pd.DataFrame:
     """
@@ -102,10 +99,10 @@ def parse_evri(text: str) -> pd.DataFrame:
         Example:
             Scottish Highlands & Islands Parcel 36 5.28 S 190.08
       - Extract:
-          * service (text before quantity)
-          * quantity
-          * price (unit price)
-          * value (line total)
+          service (text before quantity)
+          quantity
+          price (unit price)
+          value (line total)
 
     Regex pattern:
       - ^\\s*        leading spaces.
@@ -142,28 +139,60 @@ def parse_evri(text: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# =========================================
-# Cleaning: Evri
-# =========================================
+# ==============================
+# Evri cleaning and splitting
+# ==============================
 
 def clean_evri(evri_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split Evri rows into:
       - core rows with value > 0 (real charge lines)
-      - excluded rows with value == 0 (headers or meta lines)
+      - excluded rows with value == 0 (headers and meta lines)
     """
     evri_core = evri_df[evri_df["value"] > 0].copy()
     evri_excluded = evri_df[evri_df["value"] == 0].copy()
     return evri_core, evri_excluded
 
 
-# =========================================
-# Metrics
-# =========================================
+def split_evri_core(evri_core: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split Evri core rows into:
+      - despatch_rows: outbound ecommerce despatch services
+      - extra_rows: returns, SMS/ETA, relabelling, surcharges, repackaged etc.
+
+    Logic:
+      - Outbound rows usually contain Despatch, Parcel or Packet.
+      - Exclude lines where the name also contains Return.
+      - Exclude 'Repackaged' so it is treated as an extra handling charge.
+    """
+
+    # Anything that looks like an outbound movement
+    despatch_like_mask = (
+        evri_core["service"].str.contains("Despatch", case=False, na=False)
+        | evri_core["service"].str.contains("Parcel", case=False, na=False)
+        | evri_core["service"].str.contains("Packet", case=False, na=False)
+    )
+
+    # Returns are separate flows
+    return_mask = evri_core["service"].str.contains("Return", case=False, na=False)
+
+    # Parcel Repackaged is an extra handling service, not a base despatch
+    repack_mask = evri_core["service"].str.contains("Repackaged", case=False, na=False)
+
+    despatch_rows = evri_core[despatch_like_mask & ~return_mask & ~repack_mask].copy()
+    extra_rows = evri_core[~(despatch_like_mask & ~return_mask & ~repack_mask)].copy()
+
+    return despatch_rows, extra_rows
+
+
+
+# ==============================
+# Metric helpers
+# ==============================
 
 def compute_fedex_metrics(fedex_df: pd.DataFrame, fixed_rate: float) -> dict:
     """
-    Compute FedEx metrics needed for the summary table.
+    Compute FedEx metrics for the summary.
     """
 
     despatches = len(fedex_df)
@@ -200,12 +229,12 @@ def compute_fedex_metrics(fedex_df: pd.DataFrame, fixed_rate: float) -> dict:
     }
 
 
-def compute_evri_metrics(evri_core: pd.DataFrame, fixed_rate: float) -> dict:
+def compute_evri_metrics(evri_despatch: pd.DataFrame, fixed_rate: float) -> dict:
     """
-    Compute Evri metrics needed for the summary table, using cleaned data.
+    Compute Evri metrics using outbound despatch rows only.
     """
 
-    despatches = int(evri_core["quantity"].sum())
+    despatches = int(evri_despatch["quantity"].sum())
 
     if despatches == 0:
         return {
@@ -217,7 +246,7 @@ def compute_evri_metrics(evri_core: pd.DataFrame, fixed_rate: float) -> dict:
             "status": "No data",
         }
 
-    spend = round(evri_core["value"].sum(), 3)
+    spend = round(evri_despatch["value"].sum(), 3)
     avg_cost = round(spend / despatches, 3)
     variance = round(avg_cost - fixed_rate, 3)
     total_difference = round(variance * despatches, 3)
@@ -239,9 +268,9 @@ def compute_evri_metrics(evri_core: pd.DataFrame, fixed_rate: float) -> dict:
     }
 
 
-# =========================================
-# Main script
-# =========================================
+# ==============================
+# Main
+# ==============================
 
 def main():
     parser = argparse.ArgumentParser(
@@ -270,11 +299,10 @@ def main():
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Fixed cost rates (can be parameterised if needed)
     fixed_rate_fedex = 3.10
     fixed_rate_evri = 2.44
 
-    # ----- FedEx: extract and parse all PDFs -----
+    # FedEx all files
     fedex_frames = []
     for fedex_path in args.fedex:
         pdf_path = Path(fedex_path)
@@ -288,20 +316,19 @@ def main():
     else:
         fedex_df = pd.DataFrame(columns=["shipment_number", "shipment_date", "charge"])
 
-    # ----- Evri: extract and parse -----
+    # Evri
     evri_path = Path(args.evri)
     evri_text = extract_text_from_pdf(evri_path)
     evri_df = parse_evri(evri_text)
     evri_df["source_file"] = evri_path.name
 
-    # Clean Evri rows (value > 0 keeps only real charge lines)
     evri_core, evri_excluded = clean_evri(evri_df)
+    evri_despatch, evri_extras = split_evri_core(evri_core)
 
-    # ----- Compute metrics -----
+    # Metrics
     fedex_metrics = compute_fedex_metrics(fedex_df, fixed_rate_fedex)
-    evri_metrics = compute_evri_metrics(evri_core, fixed_rate_evri)
+    evri_metrics = compute_evri_metrics(evri_despatch, fixed_rate_evri)
 
-    # ----- Build summary table -----
     summary = pd.DataFrame(
         [
             {
@@ -310,28 +337,33 @@ def main():
                 "spend": fedex_metrics["spend"],
                 "avg_cost_per_despatch": fedex_metrics["avg_cost"],
                 "fixed_rate": fixed_rate_fedex,
-                "variance": fedex_metrics["variance"],
+                "variance_per_despatch": fedex_metrics["variance"],
                 "total_difference": fedex_metrics["total_difference"],
                 "status": fedex_metrics["status"],
             },
             {
-                "carrier": "Evri",
+                "carrier": "Evri outbound",
                 "despatches": evri_metrics["despatches"],
                 "spend": evri_metrics["spend"],
                 "avg_cost_per_despatch": evri_metrics["avg_cost"],
                 "fixed_rate": fixed_rate_evri,
-                "variance": evri_metrics["variance"],
+                "variance_per_despatch": evri_metrics["variance"],
                 "total_difference": evri_metrics["total_difference"],
                 "status": evri_metrics["status"],
             },
         ]
     )
 
-    # ----- Save CSVs -----
+    # Simple FedEx anomalies: zero or negative charges
+    fedex_anomalies = fedex_df[fedex_df["charge"] <= 0].copy()
+
+    # Save CSVs
     summary.to_csv(outdir / "summary_for_dashboard.csv", index=False)
     fedex_df.to_csv(outdir / "fedex_cleaned.csv", index=False)
-    evri_core.to_csv(outdir / "evri_cleaned.csv", index=False)
-    evri_excluded.to_csv(outdir / "evri_excluded.csv", index=False)
+    fedex_anomalies.to_csv(outdir / "fedex_anomalies.csv", index=False)
+    evri_despatch.to_csv(outdir / "evri_despatch.csv", index=False)
+    evri_extras.to_csv(outdir / "evri_extras.csv", index=False)
+    evri_excluded.to_csv(outdir / "evri_excluded_zero_value.csv", index=False)
 
     print("Summary:")
     print(summary.to_string(index=False))

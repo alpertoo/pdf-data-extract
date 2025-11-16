@@ -1,0 +1,15 @@
+service,quantity,price,value,raw_line,source_file
+Courier Return,38,2.68,101.84,Courier Return 38 2.68 S 101.84,Evri 1.pdf
+Scottish Highlands & Islands Return,7,5.28,36.96,Scottish Highlands & Islands Return 7 5.28 S 36.96,Evri 1.pdf
+Northern Ireland Return,30,5.28,158.4,Northern Ireland Return 30 5.28 S 158.40,Evri 1.pdf
+Light & Large Return,6,11.08,66.48,Light & Large Return 6 11.08 S 66.48,Evri 1.pdf
+Network Undelivered,78,3.09,241.02,Network Undelivered 78 3.09 S 241.02,Evri 1.pdf
+Parcelshop Return,968,2.04,1974.72,"Parcelshop Return 968 2.04 S 1,974.72",Evri 1.pdf
+Relabelling,3479,0.59,2052.61,"Relabelling 3,479 0.59 S 2,052.61",Evri 1.pdf
+SMS,15529,0.02,310.58,"SMS 15,529 0.02 S 310.58",Evri 1.pdf
+ETA,16274,0.01,162.74,"ETA 16,274 0.01 S 162.74",Evri 1.pdf
+40 Litre Volumetric Charge,1375,0.6,825.0,"40 Litre Volumetric Charge 1,375 0.60 S 825.00",Evri 1.pdf
+Parcel Repackaged,16,1.83,29.28,Parcel Repackaged 16 1.83 S 29.28,Evri 1.pdf
+Fixed Fuel Surcharge - 2.5%,1,959.39,959.39,Fixed Fuel Surcharge - 2.5% 1 959.39 S 959.39,Evri 1.pdf
+Week 34 Duplicated Barcodes,1,4.08,4.08,Week 34 Duplicated Barcodes 1 4.08 S 4.08,Evri 1.pdf
+Clean Air WK35: 443 @ £0.45,443,0.45,199.35,Clean Air WK35: 443 @ £0.45 443 0.45 S 199.35,Evri 1.pdf

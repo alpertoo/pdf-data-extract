@@ -1,0 +1,16 @@
+service,quantity,price,value,raw_line,source_file
+Courier Parcel Despatch A (1501g to,2540,2.09,5308.6,"Courier Parcel Despatch A (1501g to 2,540 2.09 S 5,308.60",Evri 1.pdf
+Courier Packet Despatch A (1g to 1500g),12287,2.09,25679.83,"Courier Packet Despatch A (1g to 1500g) 12,287 2.09 S 25,679.83",Evri 1.pdf
+Scottish Highlands & Islands Parcel,36,5.28,190.08,Scottish Highlands & Islands Parcel 36 5.28 S 190.08,Evri 1.pdf
+Scottish Highlands & Islands Packet,146,5.28,770.88,Scottish Highlands & Islands Packet 146 5.28 S 770.88,Evri 1.pdf
+Northern Ireland Parcel Despatch A,28,5.28,147.84,Northern Ireland Parcel Despatch A 28 5.28 S 147.84,Evri 1.pdf
+Northern Ireland Packet Despatch A (1g,211,5.28,1114.08,"Northern Ireland Packet Despatch A (1g 211 5.28 S 1,114.08",Evri 1.pdf
+Channel Islands Parcel Despatch A (1501g,4,5.43,21.72,Channel Islands Parcel Despatch A (1501g 4 5.43 O 21.72,Evri 1.pdf
+Channel Islands Packet Despatch A (1g to,14,5.43,76.02,Channel Islands Packet Despatch A (1g to 14 5.43 O 76.02,Evri 1.pdf
+BFPO Despatch,2,4.8,9.6,BFPO Despatch 2 4.80 S 9.60,Evri 1.pdf
+Alternative Courier Despatch,37,8.3,307.1,Alternative Courier Despatch 37 8.30 S 307.10,Evri 1.pdf
+Light & Large Despatch,15,8.49,127.35,Light & Large Despatch 15 8.49 S 127.35,Evri 1.pdf
+Next Day Parcel Despatch A (1501g to,253,2.51,635.03,Next Day Parcel Despatch A (1501g to 253 2.51 S 635.03,Evri 1.pdf
+Next Day Packet Despatch A (1g to 1500g),657,2.51,1649.07,"Next Day Packet Despatch A (1g to 1500g) 657 2.51 S 1,649.07",Evri 1.pdf
+Sunday Parcel Premium,88,1.61,141.68,Sunday Parcel Premium 88 1.61 S 141.68,Evri 1.pdf
+Sunday Packet Premium,180,1.61,289.8,Sunday Packet Premium 180 1.61 S 289.80,Evri 1.pdf
