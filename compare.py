@@ -1,4 +1,3 @@
-import argparse
 import re
 from pathlib import Path
 
@@ -228,8 +227,16 @@ def compute_fedex_metrics(fedex_df: pd.DataFrame, fixed_rate: float) -> dict:
         "status": status,
     }
 
+def get_evri_fuel_total(evri_extras: pd.DataFrame) -> float:
+    """
+    Return the total fuel surcharge from Evri extras.
 
-def compute_evri_metrics(evri_despatch: pd.DataFrame, fixed_rate: float) -> dict:
+    Looks for lines that contain the word 'Fuel' in the service name.
+    """
+    fuel_rows = evri_extras[evri_extras["service"].str.contains("Fuel", case=False, na=False)]
+    return round(fuel_rows["value"].sum(), 3)
+
+def compute_evri_metrics(evri_despatch: pd.DataFrame, fixed_rate: float, fuel_total: float = 0.0) -> dict:
     """
     Compute Evri metrics using outbound despatch rows only.
     """
@@ -246,7 +253,9 @@ def compute_evri_metrics(evri_despatch: pd.DataFrame, fixed_rate: float) -> dict
             "status": "No data",
         }
 
-    spend = round(evri_despatch["value"].sum(), 3)
+    base_spend = evri_despatch["value"].sum()
+    spend = round(base_spend + fuel_total, 3)
+
     avg_cost = round(spend / despatches, 3)
     variance = round(avg_cost - fixed_rate, 3)
     total_difference = round(variance * despatches, 3)
@@ -268,44 +277,72 @@ def compute_evri_metrics(evri_despatch: pd.DataFrame, fixed_rate: float) -> dict
     }
 
 
+
 # ==============================
 # Main
 # ==============================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compare FedEx and Evri costs against fixed rates."
-    )
+    print("=" * 60)
+    print("LOGISTICS COST COMPARISON TOOL".center(60))
+    print("=" * 60)
+    print("This tool compares FedEx and Evri invoice costs against fixed rates.")
+    print("You will be asked for:")
+    print("  - One or more FedEx PDF invoice file names")
+    print("  - One or more Evri PDF invoice file names")
+    print("  - An output folder (press Enter for 'output')\n")
 
-    parser.add_argument(
-        "--fedex",
-        nargs="+",
-        required=True,
-        help="Paths to FedEx PDF files",
-    )
-    parser.add_argument(
-        "--evri",
-        required=True,
-        help="Path to Evri PDF file",
-    )
-    parser.add_argument(
-        "--outdir",
-        default="output",
-        help="Output folder for CSV files (default: output)",
-    )
+    # Ask for FedEx file names
+    fedex_input = input(
+        "Enter FedEx PDF file names separated by commas\n"
+        "(for example: FedEx 1.pdf, FedEx 2.pdf):\n> "
+    ).strip()
 
-    args = parser.parse_args()
+    fedex_files = [f.strip() for f in fedex_input.split(",") if f.strip()]
 
-    outdir = Path(args.outdir)
+    if not fedex_files:
+        print("No FedEx files provided. Exiting.")
+        return
+
+    # Ask for Evri file names
+    evri_input = input(
+        "\nEnter Evri PDF file names separated by commas\n"
+        "(for example: Evri 1.pdf, Evri 2.pdf):\n> "
+    ).strip()
+
+    evri_files = [f.strip() for f in evri_input.split(",") if f.strip()]
+
+    if not evri_files:
+        print("No Evri files provided. Exiting.")
+        return
+
+    # Ask for output folder
+    outdir_input = input(
+        "\nEnter output folder name (press Enter to use 'output'):\n> "
+    ).strip()
+
+    if not outdir_input:
+        outdir_input = "output"
+
+    outdir = Path(outdir_input)
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Fixed rates
     fixed_rate_fedex = 3.10
     fixed_rate_evri = 2.44
 
-    # FedEx all files
+    # ==============================
+    # FedEx: load all files
+    # ==============================
+
     fedex_frames = []
-    for fedex_path in args.fedex:
+
+    for fedex_path in fedex_files:
         pdf_path = Path(fedex_path)
+        if not pdf_path.exists():
+            print(f"\nWarning: FedEx file not found: {pdf_path}")
+            continue
+
         text = extract_text_from_pdf(pdf_path)
         df = parse_fedex(text)
         df["source_file"] = pdf_path.name
@@ -314,21 +351,48 @@ def main():
     if fedex_frames:
         fedex_df = pd.concat(fedex_frames, ignore_index=True)
     else:
-        fedex_df = pd.DataFrame(columns=["shipment_number", "shipment_date", "charge"])
+        print("\nNo valid FedEx data was loaded. Exiting.")
+        return
 
-    # Evri
-    evri_path = Path(args.evri)
-    evri_text = extract_text_from_pdf(evri_path)
-    evri_df = parse_evri(evri_text)
-    evri_df["source_file"] = evri_path.name
+    # ==============================
+    # Evri: load all files
+    # ==============================
 
+    evri_frames = []
+
+    for evri_path in evri_files:
+        pdf_path = Path(evri_path)
+        if not pdf_path.exists():
+            print(f"\nWarning: Evri file not found: {pdf_path}")
+            continue
+
+        text = extract_text_from_pdf(pdf_path)
+        df = parse_evri(text)
+        df["source_file"] = pdf_path.name
+        evri_frames.append(df)
+
+    if evri_frames:
+        evri_df = pd.concat(evri_frames, ignore_index=True)
+    else:
+        print("\nNo valid Evri data was loaded. Exiting.")
+        return
+
+    # Cleaning and splitting
     evri_core, evri_excluded = clean_evri(evri_df)
     evri_despatch, evri_extras = split_evri_core(evri_core)
 
+    # Fuel from Evri extras
+    evri_fuel_total = get_evri_fuel_total(evri_extras)
+
     # Metrics
     fedex_metrics = compute_fedex_metrics(fedex_df, fixed_rate_fedex)
-    evri_metrics = compute_evri_metrics(evri_despatch, fixed_rate_evri)
+    evri_metrics = compute_evri_metrics(
+        evri_despatch,
+        fixed_rate_evri,
+        fuel_total=evri_fuel_total,
+    )
 
+    # Summary dataframe
     summary = pd.DataFrame(
         [
             {
@@ -365,10 +429,47 @@ def main():
     evri_extras.to_csv(outdir / "evri_extras.csv", index=False)
     evri_excluded.to_csv(outdir / "evri_excluded_zero_value.csv", index=False)
 
-    print("Summary:")
-    print(summary.to_string(index=False))
-    print()
-    print(f"Files written to: {outdir.resolve()}")
+    # ==============================
+    # CLI report
+    # ==============================
+
+    fedex_diff = fedex_metrics["total_difference"]
+    evri_diff = evri_metrics["total_difference"]
+
+    fedex_impact_word = "saving" if fedex_diff < 0 else "overspend"
+    evri_impact_word = "saving" if evri_diff < 0 else "overspend"
+
+    print(f"\n{'='*60}")
+    print("LOGISTICS COST COMPARISON REPORT".center(60))
+    print(f"{'='*60}\n")
+
+    print("FedEx Analysis")
+    print(f"  Despatches          : {fedex_metrics['despatches']:,}")
+    print(f"  Total spend         : £{fedex_metrics['spend']:.3f}")
+    print(f"  Fixed rate          : £{fixed_rate_fedex:.2f} per despatch")
+    print(f"  Actual average      : £{fedex_metrics['avg_cost']:.3f} per despatch")
+    print(f"  Variance per unit   : £{fedex_metrics['variance']:.3f}")
+    print(
+        f"  Total {fedex_impact_word:<9}: "
+        f"£{abs(fedex_diff):.2f} vs fixed rate\n"
+    )
+
+    print("Evri Outbound Analysis (including fuel)")
+    print(f"  Despatches          : {evri_metrics['despatches']:,}")
+    print(f"  Total spend         : £{evri_metrics['spend']:.3f}")
+    print(f"  Fixed rate          : £{fixed_rate_evri:.2f} per despatch")
+    print(f"  Actual average      : £{evri_metrics['avg_cost']:.3f} per despatch")
+    print(f"  Variance per unit   : £{evri_metrics['variance']:.3f}")
+    print(
+        f"  Total {evri_impact_word:<9}: "
+        f"£{abs(evri_diff):.2f} vs fixed rate\n"
+    )
+
+    print(f"{'-'*60}")
+    print("CSV files written to:")
+    print(f"  {outdir.resolve()}")
+    print(f"{'-'*60}\n")
+
 
 
 if __name__ == "__main__":
